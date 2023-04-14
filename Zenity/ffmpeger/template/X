@@ -1,0 +1,5 @@
+# CONFIG.JSON VARS
+
+<t*> - title for each numeral option
+<r*> - file to run via `bash file.sh`
+

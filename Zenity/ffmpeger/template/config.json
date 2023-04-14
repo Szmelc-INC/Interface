@@ -1,0 +1,25 @@
+{
+  "TITLE": "Select an Option",
+  "OPTIONS": [
+    {
+      "TITLE": "1-<t1>",
+      "RUN": "bash <r1>"
+    },
+    {
+      "TITLE": "2-<t2>",
+      "RUN": "bash <r1>"
+    },
+    {
+      "TITLE": "3-<t3>",
+      "RUN": "bash <r1>"
+    },
+    {
+      "TITLE": "4-<t4>",
+      "RUN": "bash <r1>"
+    },
+    {
+      "TITLE": "5-<t5>",
+      "RUN": "bash <r5>"
+    }
+  ]
+}
