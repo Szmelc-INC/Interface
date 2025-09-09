@@ -27,7 +27,8 @@
 >`menu-fzf.sh`
 >Entries-based zsh + fzf TUI (sane preview, confirm & run) \
 >DATA: one entry per line (TAB-separated): title  desc  preview_cmd  run_cmd \
-><img width="1475" height="753" alt="image" src="https://github.com/user-attachments/assets/5fb14d8b-d4db-418e-b50e-390dbb43f30b" />
+><img width="1475" height="753" alt="image" src="https://github.com/user-attachments/assets/5fb14d8b-d4db-418e-b50e-390dbb43f30b" /> \
+><img width="1292" height="684" alt="image" src="https://github.com/user-attachments/assets/17a2e86a-b3b3-4fcb-8874-01cb5b2a1797" />
 
 
 
