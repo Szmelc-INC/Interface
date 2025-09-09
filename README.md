@@ -22,6 +22,11 @@
 >`bar.sh`
 >Select bars with up/down arrows, change values with left/right arrows. \
 ><img width="949" height="261" alt="image" src="https://github.com/user-attachments/assets/e42a2988-512b-404a-b916-acd8c7b3dcda" />
+>
+>#### > Multi-Pane (fzf)
+>`mpane-fzf.sh`
+>Menu left, plain preview right. Tab/Space to toggle, Enter runs in order \
+><img width="1628" height="416" alt="image" src="https://github.com/user-attachments/assets/6fd6e93f-8194-4f13-9022-abde33555707" />
 
 ---
 
