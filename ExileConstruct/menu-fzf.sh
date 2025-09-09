@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 # menu-fzf.zsh — bordered fzf TUI with config support
 # - If --config/-c is provided, ONLY entries from that file are used.
+# - If --single is provided, force single-choice selection (no toggles).
 
 set -u
 set -o pipefail
@@ -11,6 +12,7 @@ command -v fzf >/dev/null 2>&1 || { print -u2 "fzf not found"; exit 1; }
 TITLE="TUI MENU"
 BINDS="Space/Tab: toggle • Enter: confirm • q/C-c: abort"
 CONFIG_FILE=""           # if set, built-ins are ignored
+SINGLE=0                 # force single selection when 1
 
 print_help() {
   cat <<'USAGE'
@@ -23,6 +25,8 @@ Options:
   -c, --config FILE   Load entries from FILE (ENTRY blocks). When provided,
                       built-in entries in the script are *ignored*.
                       Use "-" to read the config from stdin.
+  --single            Single selection mode (no toggles). User picks one item,
+                      then you confirm & run.
   --title TEXT        Set top border title (default: "TUI MENU")
   --binds TEXT        Set bottom binds text (default shown above)
   -h, --help          Show this help and exit
@@ -39,23 +43,23 @@ USAGE
 # arg parsing
 while (( $# )); do
   case "$1" in
-    -c|--config)
-      (( $# >= 2 )) || { print -u2 "error: --config needs a file"; exit 2; }
+    -c|--config) (( $# >= 2 )) || { print -u2 "error: --config needs a file"; exit 2; }
       CONFIG_FILE="$2"; shift 2;;
-    --title)
-      (( $# >= 2 )) || { print -u2 "error: --title needs a string"; exit 2; }
+    --single) SINGLE=1; shift;;
+    --title)  (( $# >= 2 )) || { print -u2 "error: --title needs a string"; exit 2; }
       TITLE="$2"; shift 2;;
-    --binds)
-      (( $# >= 2 )) || { print -u2 "error: --binds needs a string"; exit 2; }
+    --binds)  (( $# >= 2 )) || { print -u2 "error: --binds needs a string"; exit 2; }
       BINDS="$2"; shift 2;;
-    -h|--help)
-      print_help; exit 0;;
+    -h|--help) print_help; exit 0;;
     --) shift; break;;
-    -*)
-      print -u2 "unknown option: $1"; print_help; exit 2;;
+    -*) print -u2 "unknown option: $1"; print_help; exit 2;;
     *) break;;
   esac
 done
+
+if (( SINGLE )) && [[ "$BINDS" == "Space/Tab: toggle • Enter: confirm • q/C-c: abort" ]]; then
+  BINDS="Enter/Space: confirm • q/C-c: abort"
+fi
 
 # -------------------- entries API --------------------
 typeset -a ENTRIES
@@ -71,52 +75,23 @@ ENTRY() {
 
 # -------------------- load entries --------------------
 if [[ -n "$CONFIG_FILE" ]]; then
-  # Config provided → ignore built-ins entirely
   if [[ "$CONFIG_FILE" == "-" ]]; then
     cfg_tmp=$(mktemp) || { print -u2 "mktemp failed"; exit 1; }
-    cat > "$cfg_tmp"
-    source "$cfg_tmp"
-    rm -f "$cfg_tmp"
+    cat > "$cfg_tmp"; source "$cfg_tmp"; rm -f "$cfg_tmp"
   else
     [[ -r "$CONFIG_FILE" ]] || { print -u2 "config not readable: $CONFIG_FILE"; exit 2; }
     source "$CONFIG_FILE"
   fi
 else
-  # Built-in defaults (used only when no --config given)
-  ENTRY "Uname" <<EOF
-Kernel and arch information
-uname -a
-uname -a
+  ENTRY "List Users" <<'EOF'
+List system users
+cut -d: -f1 /etc/passwd | sort | head -n 20
+cut -d: -f1 /etc/passwd | sort
 EOF
-
-  ENTRY "Date" <<EOF
-Current system date/time (RFC 2822)
-date -R
-date -R
-EOF
-
-  ENTRY "Disk Usage" <<EOF
-df -h for mounted filesystems
-df -h
-df -h
-EOF
-
-  ENTRY "Memory" <<EOF
-free -h snapshot
-free -h
-free -h
-EOF
-
-  ENTRY "Top Processes" <<EOF
-ps sorted by CPU
-ps -eo pid,ppid,comm,pcpu,pmem --sort=-pcpu | head -n 20
-ps -eo pid,ppid,comm,pcpu,pmem --sort=-pcpu | head -n 20
-EOF
-
-  ENTRY "Kernel Modules" <<EOF
-lsmod summary
-lsmod | head -n 40
-lsmod
+  ENTRY "Journal Errors" <<'EOF'
+Last 20 errors from journal
+journalctl -p err -n 20
+journalctl -p err -n 20
 EOF
 fi
 
@@ -132,9 +107,10 @@ tsv=$(mktemp) || { print -u2 "mktemp failed"; exit 1; }
   done
 } > "$tsv"
 
-# -------------------- preview script (box-drawing bars, no brackets) --------------------
-preview_sh=$(mktemp) || { print -u2 "mktemp failed"; exit 1; }
-cat >"$preview_sh" <<'ZSH'
+ret=0
+while :; do
+  preview_sh=$(mktemp) || { print -u2 "mktemp failed"; exit 1; }
+  cat >"$preview_sh" <<'ZSH'
 #!/usr/bin/env zsh
 set -u
 set -o pipefail
@@ -161,107 +137,117 @@ CYAN=$'\e[36m'
 ORANGE=$'\e[38;5;208m'
 GREEN=$'\e[32m'
 
-H=$'─'       # U+2500
-TEE_L=$'├'   # U+251C
-TEE_R=$'┤'   # U+2524
-
-hr() { local n=$1 out=""; while (( n-- > 0 )); do out+="$H"; done; printf "%s" "$out"; }
+hr() { local n=$1 out=""; while (( n-- > 0 )); do out+="─"; done; printf "%s" "$out"; }
 bar() {
-  # centered bar: ───┤ Info ├───  (no brackets)
   local label="$1" color="$2"
-  local plain="$TEE_R ${label} $TEE_L"             # width w/o ANSI
-  local colored="$TEE_R ${color}${label}${R} $TEE_L"
+  local plain="─ ${label} ─"
+  local colored="─ ${color}${label}${R} ─"
   local L=$(( (cols - ${#plain}) / 2 )); (( L < 0 )) && L=0
   local Rpad=$(( cols - L - ${#plain} )); (( Rpad < 0 )) && Rpad=0
   hr "$L"; printf "%s" "$colored"; hr "$Rpad"; printf "\n"
 }
 
-bar "Info" "$ORANGE"
+bar "INFO" "$GREEN"
 print -r -- "${B}${CYAN}${title}${R}"
 print -r -- "$desc" | fold -s -w "$cols"
 printf "\n"
 
-bar "Preview" "$GREEN"
+bar "PREVIEW" "$ORANGE"
 {
-  eval "$pcmd" 2>&1 \
-  | head -n $((lines - 6)) \
-  | cut -c1-"$cols"
+  eval "$pcmd" 2>&1 | head -n $((lines - 6)) | cut -c1-"$cols"
 } || true
 ZSH
-chmod +x "$preview_sh"
+  chmod +x "$preview_sh"
 
-# -------------------- Run fzf --------------------
-set +e
-selection="$(
-  {
-    # Fake footer line (kept at bottom via --header-lines with --layout=reverse)
-    echo "===FOOTER=== $BINDS"
-    cat "$tsv"
-  } | \
-  fzf --ansi --multi --height=100% --layout=reverse \
-      --delimiter=$'\t' --with-nth=2 \
-      --preview "$preview_sh $tsv {1}" \
-      --preview-window=right,70%,wrap,border-left \
-      --marker='x' --pointer='▶ ' --prompt='Select > ' \
-      --bind 'space:toggle,tab:toggle,q:abort' \
-      --border --border-label=" $TITLE " --border-label-pos=top \
-      --padding=1,2 \
-      --header-lines=1 --header-first
-)"
-fzf_rc=$?
-set -e
+  typeset -a FZF_OPTS
+  FZF_OPTS+=(
+    --ansi
+    --height=100%
+    --layout=reverse
+    --delimiter=$'\t'
+    --with-nth=2
+    --preview "$preview_sh $tsv {1}"
+    --preview-window=right,70%,wrap,border-left
+    --pointer='▶ '
+    --prompt=$'Select > '
+    --border
+    --border-label=" ${TITLE} "
+    --border-label-pos=top
+    --padding=1,2
+    --header-lines=1
+    --header-first
+    --color=label:cyan
+  )
+  if (( SINGLE )); then
+    FZF_OPTS+=( --bind 'q:abort,space:accept' )
+  else
+    FZF_OPTS+=( --multi --marker='x' --bind 'space:toggle,tab:toggle,q:abort' )
+  fi
 
-rm -f "$preview_sh"
-
-if (( fzf_rc != 0 )); then
-  rm -f "$tsv"; exit $fzf_rc
-fi
-
-# Strip the fake footer row if selected accidentally
-selection="$(print -r -- "$selection" | grep -v '^===FOOTER===')"
-
-if [[ -z "${selection// }" ]]; then
-  print "No selections."
-  rm -f "$tsv"
-  exit 0
-fi
-
-# -------------------- Parse & execute --------------------
-typeset -a RUN_TITLES RUN_CMDS
-while IFS=$'\t' read -r i t d p r; do
-  [[ -z "${i:-}" ]] && continue
-  RUN_TITLES+=("$t")
-  RUN_CMDS+=("$r")
-done <<< "$selection"
-
-print
-print -P "%F{cyan}%BAbout to execute ${#RUN_TITLES[@]} selection(s) in order:%b%f"
-print "------------------------------------------------------------"
-for i in {1..${#RUN_TITLES[@]}}; do
-  printf "%2d) %s\n    → %s\n" "$i" "$RUN_TITLES[$i]" "$RUN_CMDS[$i]"
-done
-print "------------------------------------------------------------"
-print -n "Proceed? [Y/n] "
-read -rk 1 reply || reply=""
-print
-
-if [[ -n "$reply" && "$reply" != $'\n' && "$reply" != 'Y' && "$reply" != 'y' ]]; then
-  print "Aborted."
-  rm -f "$tsv"
-  exit 0
-fi
-
-ret=0
-for i in {1..${#RUN_TITLES[@]}}; do
-  print
-  print -P "%F{green}%B[$i/${#RUN_TITLES[@]}] ${RUN_TITLES[$i]}%b%f"
-  print -P "%F{yellow}$ ${RUN_CMDS[$i]}%f"
   set +e
-  eval "${RUN_CMDS[$i]}"
-  rc=$?
+  selection="$(
+    { echo "===FOOTER=== $BINDS"; cat "$tsv"; } | fzf "${FZF_OPTS[@]}"
+  )"
+  fzf_rc=$?
   set -e
-  (( rc != 0 )) && { print -P "%F{red}Exit $rc%f"; ret=$rc; }
-done
 
-rm -f "$tsv"
-exit $ret
+  rm -f "$preview_sh"
+
+  if (( fzf_rc != 0 )); then
+    rm -f "$tsv"; exit $fzf_rc
+  fi
+
+  selection="$(print -r -- "$selection" | grep -v '^===FOOTER===')"
+  if [[ -z "${selection// }" ]]; then
+    print "No selections."
+    rm -f "$tsv"; exit 0
+  fi
+
+  typeset -A SEEN=()
+  typeset -a RUN_TITLES RUN_CMDS
+  while IFS=$'\t' read -r i t d p r; do
+    [[ -z "${i:-}" ]] && continue
+    if [[ -z "${SEEN[$i]:-}" ]]; then
+      SEEN[$i]=1
+      RUN_TITLES+=("$t")
+      RUN_CMDS+=("$r")
+    fi
+  done <<< "$selection"
+
+  print
+  print -P "%F{cyan}%BAbout to execute ${#RUN_TITLES[@]} selection(s) in order:%b%f"
+  print "------------------------------------------------------------"
+  for i in {1..${#RUN_TITLES[@]}}; do
+    printf "%2d) %s\n    → %s\n" "$i" "$RUN_TITLES[$i]" "$RUN_CMDS[$i]"
+  done
+  print "------------------------------------------------------------"
+  print -n "Proceed? [Y/n] (Esc: exit, q: quit) "
+
+  reply=""
+  stty -echo -icanon time 50 min 0 2>/dev/null || true
+  IFS= read -rk 1 reply || reply=""
+  if [[ "$reply" == $'\e' ]]; then
+    while IFS= read -rk 1 -t 0.01 _; do :; done
+  fi
+  stty sane 2>/dev/null || true
+  print
+
+  case "$reply" in
+    $'\e')   print "Aborted (Esc)."; rm -f "$tsv"; exit 0;;
+    q|Q)     print "Aborted."; rm -f "$tsv"; exit 0;;
+    n|N)     print "Aborted."; rm -f "$tsv"; exit 0;;
+    ""|$'\n'|y|Y)
+      for i in {1..${#RUN_TITLES[@]}}; do
+        print
+        print -P "%F{green}%B[$i/${#RUN_TITLES[@]}] ${RUN_TITLES[$i]}%b%f"
+        print -P "%F{yellow}$ ${RUN_CMDS[$i]}%f"
+        set +e
+        eval "${RUN_CMDS[$i]}"
+        rc=$?
+        set -e
+        (( rc != 0 )) && { print -P "%F{red}Exit $rc%f"; ret=$rc; }
+      done
+      rm -f "$tsv"; exit $ret;;
+    *)       print "Aborted."; rm -f "$tsv"; exit 0;;
+  esac
+done
