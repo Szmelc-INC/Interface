@@ -23,6 +23,15 @@
 >Select bars with up/down arrows, change values with left/right arrows. \
 ><img width="949" height="261" alt="image" src="https://github.com/user-attachments/assets/e42a2988-512b-404a-b916-acd8c7b3dcda" />
 >
+>#### Menu FZF
+>`menu-fzf.sh`
+>Entries-based zsh + fzf TUI (sane preview, confirm & run) \
+>DATA: one entry per line (TAB-separated): title  desc  preview_cmd  run_cmd \
+><img width="1475" height="753" alt="image" src="https://github.com/user-attachments/assets/5fb14d8b-d4db-418e-b50e-390dbb43f30b" />
+
+
+
+
 >#### > Multi-Pane (fzf)
 >`mpane-fzf.sh`
 >Menu left, plain preview right. Tab/Space to toggle, Enter runs in order \
